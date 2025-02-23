@@ -6,78 +6,76 @@
 //
 
 import SwiftUI
-import CoreData
 
 struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
-
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
-        animation: .default)
-    private var items: FetchedResults<Item>
-
+    @State private var files: [URL] = []
+    
     var body: some View {
         NavigationView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp!, formatter: itemFormatter)")
-                    } label: {
-                        Text(item.timestamp!, formatter: itemFormatter)
-                    }
+            List(files, id: \.self) { file in
+                NavigationLink(destination: Text(file.lastPathComponent)) {
+                    Text(file.lastPathComponent)
                 }
-                .onDelete(perform: deleteItems)
             }
             .toolbar {
                 ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
+                    Button(action: refreshFiles) {
+                        Label("Refresh", systemImage: "arrow.clockwise")
                     }
                 }
             }
-            Text("Select an item")
+            .onAppear {
+                DispatchQueue.main.async {
+                    checkAndRequestFolderAccess()
+                }
+            }
+            
+            Text("Select a file")
+        }
+    }
+    
+    /// Checks if the user has granted access to Downloads, otherwise requests it
+    private func checkAndRequestFolderAccess() {
+        if UserDefaults.standard.string(forKey: "downloadsFolder") == nil {
+            requestFolderAccess()
+        } else {
+            refreshFiles()
         }
     }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
+    /// Asks the user for access to the Downloads folder using NSOpenPanel
+    private func requestFolderAccess() {
+        DispatchQueue.main.async {
+            let openPanel = NSOpenPanel()
+            openPanel.message = "Please grant access to your Downloads folder"
+            openPanel.prompt = "Allow"
+            openPanel.canChooseFiles = false
+            openPanel.canChooseDirectories = true
+            openPanel.allowsMultipleSelection = false
+            openPanel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            
+            if openPanel.runModal() == .OK, let selectedURL = openPanel.url {
+                UserDefaults.standard.set(selectedURL.path, forKey: "downloadsFolder")
+                refreshFiles()
             }
         }
     }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
+    
+    /// Reads and lists the files from the Downloads folder
+    private func refreshFiles() {
+        guard let path = UserDefaults.standard.string(forKey: "downloadsFolder") else { return }
+        let downloadsURL = URL(fileURLWithPath: path)
+        
+        do {
+            let fileURLs = try FileManager.default.contentsOfDirectory(at: downloadsURL, includingPropertiesForKeys: nil)
+            self.files = fileURLs.filter { !$0.hasDirectoryPath } // Show only files, not folders
+        } catch {
+            print("Error accessing Downloads folder: \(error)")
         }
     }
 }
-
-private let itemFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .medium
-    return formatter
-}()
 
 #Preview {
-    ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+    ContentView()
 }
+

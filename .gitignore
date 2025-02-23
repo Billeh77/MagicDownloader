@@ -1,0 +1,40 @@
+# macOS system files
+.DS_Store
+
+# Xcode
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+DerivedData/
+.idea/
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# Build files
+build/
+*.app
+*.ipa
+*.dSYM
+*.xcarchive
+
+# Logs
+*.log
+
+# CocoaPods
+Pods/
+Podfile.lock
+
+# Carthage
+Carthage/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+
+# Git & Version Control
+*.orig

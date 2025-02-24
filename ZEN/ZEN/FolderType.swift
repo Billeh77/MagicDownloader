@@ -30,4 +30,21 @@ enum FolderType: String, CaseIterable, Identifiable {
     var userDefaultsKey: String {
         "accessedFolder_\(self.rawValue)"
     }
+    
+    /// ✅ Determines the `FolderType` from a given `URL`
+    static func fromURL(_ url: URL) -> FolderType? {
+        let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+
+        if url == downloadsURL {
+            return .downloads
+        } else if url == documentsURL {
+            return .documents
+        } else if url == desktopURL {
+            return .desktop
+        } else {
+            return nil // ✅ URL does not match any predefined folder type
+        }
+    }
 }

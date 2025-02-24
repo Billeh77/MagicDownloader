@@ -13,7 +13,7 @@ struct FileInfoAndMovingView: View {
     // Extract file properties
     private var fileName: String { fileURL.lastPathComponent }
     private var fileLocation: String { fileURL.deletingLastPathComponent().path }
-    private var fileType: FileTypeIcon { FileTypeIcon.fromFileExtension(fileURL.pathExtension) }
+    private var fileType: FileTypeIcon { FileTypeIcon.from(url: fileURL) }
     
     @State private var creationDate: String = "Unknown"
     @State private var modificationDate: String = "Unknown"
@@ -27,7 +27,7 @@ struct FileInfoAndMovingView: View {
                 Image(systemName: fileType.symbolName)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 32, height: 32)
+                    .frame(width: 48, height: 48)
                     .foregroundColor(.accentColor)
                 
                 // ✅ File Details

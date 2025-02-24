@@ -5,6 +5,8 @@
 //  Created by Emile Billeh on 23/02/2025.
 //
 
+import Foundation
+
 enum FileTypeIcon {
     case folder, document, image, video, pdf, code, audio, archive, system
 
@@ -23,9 +25,14 @@ enum FileTypeIcon {
         }
     }
 
-    /// Determines the file type from a given URL
-    static func fromFileExtension(_ fileExtension: String) -> FileTypeIcon {
-        switch fileExtension.lowercased() {
+    /// Determines the file type from a given URL, explicitly handling folders
+    static func from(url: URL) -> FileTypeIcon {
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            return .folder
+        }
+
+        switch url.pathExtension.lowercased() {
         case "jpg", "jpeg", "png", "gif", "tiff", "bmp", "heic":
             return .image
         case "mp4", "mov", "avi", "mkv", "wmv":
@@ -44,4 +51,5 @@ enum FileTypeIcon {
             return .document
         }
     }
+
 }

@@ -147,15 +147,19 @@ struct FileInfoAndMovingView: View {
         }
     }
     
-    
-    // ✅ Handles the file drop operation
+    /// ✅ Handles the file drop operation
     private func handleFileDrop(_ providers: [NSItemProvider], targetFolder: URL) -> Bool {
         if let provider = providers.first {
             provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { (data, error) in
-                guard let data = data as? Data, let fileURL = URL(dataRepresentation: data, relativeTo: nil) else { return }
-                
+                guard let data = data as? Data,
+                      let droppedFileURL = URL(dataRepresentation: data, relativeTo: nil) else {
+                    print("❌ Error: Could not retrieve dropped file URL")
+                    return
+                }
+
                 DispatchQueue.main.async {
                     self.targetFolder = targetFolder
+//                    self.fileURL = droppedFileURL
                     self.showMoveAlert = true
                 }
             }
@@ -163,75 +167,44 @@ struct FileInfoAndMovingView: View {
         }
         return false
     }
+
     
     /// ✅ Moves the file to the selected folder
     private func moveFile() {
-        guard let destinationFolder = targetFolder else { return }
-        
-        // ✅ Request permission if destination folder is not already accessible
-        requestFolderAccess(for: destinationFolder) { grantedFolder in
-            if let grantedFolder = grantedFolder {
-                moveFile(to: grantedFolder) // ✅ Move after access is granted
-            } else {
-                print("⚠️ User did not grant access to \(destinationFolder.path)")
-            }
+        guard let destinationFolder = targetFolder else {
+            print("❌ Error: No destination folder selected")
+            return
         }
+
+        // ✅ Move file directly (No more security prompts)
+        moveFile(to: destinationFolder)
     }
     
-    /// ✅ Allows user to select any folder for moving the file
-    private func requestManualFolderAccess(for folder: URL) {
-        let openPanel = NSOpenPanel()
-        openPanel.message = "Please grant access to move the file into \(folder.lastPathComponent)"
-        openPanel.prompt = "Allow"
-        openPanel.canChooseFiles = false
-        openPanel.canChooseDirectories = true
-        openPanel.allowsMultipleSelection = false
-        openPanel.directoryURL = folder
-        
-        if openPanel.runModal() == .OK, let selectedURL = openPanel.url {
-            moveFile(to: selectedURL) // ✅ Move the file after getting access
-        } else {
-            print("User denied access to \(folder.path)")
-        }
-    }
-    
-    /// ✅ Moves the file after gaining access
+    /// ✅ Moves the file to the selected folder
     private func moveFile(to destinationFolder: URL) {
         let destinationURL = destinationFolder.appendingPathComponent(fileName)
-        
-        // ✅ Ensure security-scoped access before moving
-        if destinationFolder.startAccessingSecurityScopedResource() {
-            do {
-                try FileManager.default.moveItem(at: fileURL, to: destinationURL)
-                print("✅ File successfully moved to: \(destinationURL.path)")
-            } catch {
-                print("❌ Error moving file: \(error)")
+
+        do {
+            // ✅ Ensure the file exists before attempting to move
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                print("❌ Error: Source file does not exist at \(fileURL.path)")
+                return
             }
-            destinationFolder.stopAccessingSecurityScopedResource() // ✅ Release access after moving
-        } else {
-            print("❌ Failed to access security-scoped resource for \(destinationFolder.path)")
-        }
-    }
-    
-    private func getStoredFolderAccess(for folderName: String) -> URL? {
-        if let bookmarkData = UserDefaults.standard.data(forKey: "savedFolderBookmark_\(folderName)") {
-            do {
-                var isStale = false
-                let folderURL = try URL(resolvingBookmarkData: bookmarkData, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale)
-                
-                if isStale {
-                    print("Bookmark data is stale. Requesting permission again.")
-                    return nil
-                }
-                
-                if folderURL.startAccessingSecurityScopedResource() {
-                    return folderURL
-                }
-            } catch {
-                print("Error retrieving bookmark: \(error)")
+
+            // ✅ Ensure the destination folder exists, create if missing
+            if !FileManager.default.fileExists(atPath: destinationFolder.path) {
+                try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true, attributes: nil)
             }
+
+            // ✅ Move the file
+            try FileManager.default.moveItem(at: fileURL, to: destinationURL)
+            print("✅ File successfully moved to: \(destinationURL.path)")
+
+            // ✅ Update `fileURL` reference after move
+//            self.fileURL = destinationURL
+        } catch {
+            print("❌ Error moving file: \(error)")
         }
-        return nil
     }
     
     // ✅ Loads file metadata (creation date, modification date, origin)
@@ -406,11 +379,6 @@ struct FileInfoAndMovingView: View {
     // ✅ Open the file
     private func openFile() {
         NSWorkspace.shared.open(fileURL)
-    }
-    
-    // ✅ Show suggested locations (Placeholder)
-    private func viewSuggestedLocations() {
-        print("Viewing suggested locations for \(fileName)")
     }
     
     // ✅ Delete the file (Confirmation Needed)

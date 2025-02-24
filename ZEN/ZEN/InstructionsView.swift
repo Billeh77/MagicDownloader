@@ -42,8 +42,8 @@ struct InstructionsView: View {
                             .font(.subheadline)
                     }
                     HStack {
-                        Image(systemName: "cursorarrow.rays")
-                        Text("Click on a folder below to view its current contents")
+                        Image(systemName: "cursorarrow.click.2")
+                        Text("Right click on a folder below to view its current contents")
                             .font(.subheadline)
                     }
                 }

@@ -3,10 +3,12 @@
 <plist version="1.0">
 <dict>
 	<key>NSPrivacyAccessedAPIFilesAndFolders</key>
-	<string>Downloads</string>
+	<string>Downloads, Documents, Desktop</string>
 	<key>NSUserSelectedFileURLs</key>
 	<array>
 		<string>Downloads</string>
+		<string>Documents</string>
+		<string>Desktop</string>
 	</array>
 </dict>
 </plist>

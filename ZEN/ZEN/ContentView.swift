@@ -52,7 +52,7 @@ struct ContentView: View {
                 }
 
                 List(files, id: \.self) { file in
-                    NavigationLink(destination: FileInfoAndMovingView(fileURL: file)) {
+                    NavigationLink(destination: ItemInfoAndMovingView(fileURL: file)) {
                         Text(file.lastPathComponent)
                     }
                 }

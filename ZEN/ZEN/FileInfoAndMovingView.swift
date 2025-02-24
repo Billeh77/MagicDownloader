@@ -167,7 +167,7 @@ struct FileInfoAndMovingView: View {
     /// ✅ Moves the file to the selected folder
     private func moveFile() {
         guard let destinationFolder = targetFolder else { return }
-
+        
         // ✅ Request permission if destination folder is not already accessible
         requestFolderAccess(for: destinationFolder) { grantedFolder in
             if let grantedFolder = grantedFolder {
@@ -187,18 +187,18 @@ struct FileInfoAndMovingView: View {
         openPanel.canChooseDirectories = true
         openPanel.allowsMultipleSelection = false
         openPanel.directoryURL = folder
-
+        
         if openPanel.runModal() == .OK, let selectedURL = openPanel.url {
             moveFile(to: selectedURL) // ✅ Move the file after getting access
         } else {
             print("User denied access to \(folder.path)")
         }
     }
-
+    
     /// ✅ Moves the file after gaining access
     private func moveFile(to destinationFolder: URL) {
         let destinationURL = destinationFolder.appendingPathComponent(fileName)
-
+        
         // ✅ Ensure security-scoped access before moving
         if destinationFolder.startAccessingSecurityScopedResource() {
             do {
@@ -223,7 +223,7 @@ struct FileInfoAndMovingView: View {
                     print("Bookmark data is stale. Requesting permission again.")
                     return nil
                 }
-
+                
                 if folderURL.startAccessingSecurityScopedResource() {
                     return folderURL
                 }
@@ -250,12 +250,30 @@ struct FileInfoAndMovingView: View {
             print("Error fetching file metadata: \(error)")
         }
         
-        // ✅ Check if file came from the internet
-        if fileURL.absoluteString.hasPrefix("http") {
-            originSource = fileURL.absoluteString
+        // ✅ Retrieve and clean "Where from" information
+        if var whereFromURL = getFileDownloadURL(fileURL) {
+            if let lastSlashIndex = whereFromURL.range(of: "/", options: .backwards)?.lowerBound {
+                let index = whereFromURL.index(after: lastSlashIndex)
+                whereFromURL = String(whereFromURL[..<index]) // ✅ Trim everything after last `/`
+            }
+            originSource = whereFromURL
         } else {
             originSource = "Manually Created"
         }
+    }
+    
+    /// ✅ Extracts the "Where from" metadata from macOS extended attributes
+    private func getFileDownloadURL(_ url: URL) -> String? {
+        let attributeName = "com.apple.metadata:kMDItemWhereFroms"
+        
+        // ✅ Retrieve the extended attribute
+        if let data = try? url.extendedAttribute(forName: attributeName) {
+            if let urlArray = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String] {
+                return urlArray.first // ✅ The first item usually contains the download URL
+            }
+        }
+
+        return nil // ✅ No download origin found
     }
     
     // ✅ Formats a date to a readable string
@@ -294,11 +312,11 @@ struct FileInfoAndMovingView: View {
             self.availableFolders = discoveredFolders // ✅ Update folders after all requests complete
         }
     }
-
+    
     
     private func getSecureFolderAccess(for folder: URL, completion: @escaping (URL?) -> Void) {
         let folderKey = "savedFolderBookmark_\(folder.lastPathComponent)"
-
+        
         // ✅ Check if a stored security-scoped bookmark exists
         if let bookmarkData = UserDefaults.standard.data(forKey: folderKey) {
             do {
@@ -307,13 +325,13 @@ struct FileInfoAndMovingView: View {
                                         options: .withSecurityScope,
                                         relativeTo: nil,
                                         bookmarkDataIsStale: &isStale)
-
+                
                 if isStale {
                     print("Bookmark data is stale. Requesting permission again.")
                     requestFolderAccess(for: folder, completion: completion)
                     return
                 }
-
+                
                 if folderURL.startAccessingSecurityScopedResource() {
                     completion(folderURL) // ✅ Successfully accessed stored folder
                     return
@@ -324,11 +342,11 @@ struct FileInfoAndMovingView: View {
                 print("Error resolving bookmark for \(folder.path): \(error)")
             }
         }
-
+        
         // ✅ If no bookmark exists, request folder access
         requestFolderAccess(for: folder, completion: completion)
     }
-
+    
     
     
     /// ✅ Requests access to the given folder and stores a security-scoped bookmark
@@ -341,13 +359,13 @@ struct FileInfoAndMovingView: View {
             openPanel.canChooseDirectories = true
             openPanel.allowsMultipleSelection = false
             openPanel.directoryURL = folder
-
+            
             if openPanel.runModal() == .OK, let selectedURL = openPanel.url {
                 do {
                     let bookmarkData = try selectedURL.bookmarkData(options: .withSecurityScope,
                                                                     includingResourceValuesForKeys: nil,
                                                                     relativeTo: nil)
-
+                    
                     UserDefaults.standard.set(bookmarkData, forKey: "savedFolderBookmark_\(folder.lastPathComponent)")
                     completion(selectedURL) // ✅ Return the selected folder asynchronously
                     return
@@ -355,11 +373,11 @@ struct FileInfoAndMovingView: View {
                     print("Error creating security-scoped bookmark: \(error)")
                 }
             }
-
+            
             completion(nil) // ✅ If access fails, return nil
         }
     }
-
+    
     
     
     // ✅ Retrieves all folders within a given directory
@@ -411,3 +429,25 @@ struct FileInfoAndMovingView: View {
 }
 
 
+extension URL {
+    /// ✅ Reads an extended attribute from the file
+    func extendedAttribute(forName name: String) throws -> Data {
+        let path = self.path
+        let data = try URL.getxattr(path, name) // ✅ Explicitly call the global function
+        return data
+    }
+
+    /// ✅ Retrieves raw extended attribute data using the global `getxattr`
+    private static func getxattr(_ path: String, _ name: String) throws -> Data {
+        let length = Darwin.getxattr(path, name, nil, 0, 0, 0) // ✅ Use `Darwin.getxattr` explicitly
+        guard length >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: nil) }
+
+        var data = Data(count: length)
+        let result = data.withUnsafeMutableBytes { buffer in
+            Darwin.getxattr(path, name, buffer.baseAddress, length, 0, 0) // ✅ Use `Darwin.getxattr`
+        }
+        guard result >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: nil) }
+
+        return data
+    }
+}

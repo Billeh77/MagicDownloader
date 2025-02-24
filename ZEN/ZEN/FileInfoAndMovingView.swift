@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Foundation
 
 struct FileInfoAndMovingView: View {
     let fileURL: URL
@@ -18,7 +19,11 @@ struct FileInfoAndMovingView: View {
     @State private var creationDate: String = "Unknown"
     @State private var modificationDate: String = "Unknown"
     @State private var originSource: String = "Unknown"
-
+    
+    @State private var availableFolders: [URL] = []
+    
+    @State private var showDeleteAlert = false 
+    
     var body: some View {
         VStack(spacing: 0) {
             // ✅ Top Bar for File Info
@@ -50,7 +55,7 @@ struct FileInfoAndMovingView: View {
                 }
                 
                 Spacer()
-
+                
                 // ✅ Action Buttons
                 HStack (spacing: 20) {
                     Button(action: openFile) {
@@ -60,7 +65,7 @@ struct FileInfoAndMovingView: View {
                         }
                     }
                     .buttonStyle(BorderlessButtonStyle())
-
+                    
                     Button(action: viewSuggestedLocations) {
                         VStack {
                             Image(systemName: "map.fill")
@@ -68,8 +73,10 @@ struct FileInfoAndMovingView: View {
                         }
                     }
                     .buttonStyle(BorderlessButtonStyle())
-
-                    Button(action: deleteFile) {
+                    
+                    Button(action: {
+                        showDeleteAlert = true // ✅ Show confirmation alert before deleting
+                    }) {
                         VStack {
                             Image(systemName: "trash.fill")
                             Text("Delete")
@@ -77,6 +84,14 @@ struct FileInfoAndMovingView: View {
                     }
                     .foregroundStyle(.red)
                     .buttonStyle(BorderlessButtonStyle())
+                    .alert("Move to Trash?", isPresented: $showDeleteAlert) {
+                        Button("Cancel", role: .cancel) { }
+                        Button("Move to Trash", role: .destructive) {
+                            deleteFile() // ✅ Only delete if user confirms
+                        }
+                    } message: {
+                        Text("Are you sure you want to move \"\(fileName)\" to the Trash? This action cannot be undone.")
+                    }
                 }
             }
             .padding()
@@ -84,9 +99,40 @@ struct FileInfoAndMovingView: View {
             // ✅ Divider to Separate Top Bar from Bottom Content
             Divider()
             
+            // ✅ Grid of All Available Folders
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150))], spacing: 20) {
+                    ForEach(availableFolders, id: \.self) { folder in
+                        VStack {
+                            Image(systemName: "folder.fill")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 40, height: 40)
+                                .foregroundColor(.accentColor)
+                            
+                            Text(folder.lastPathComponent)
+                                .font(.headline)
+                                .lineLimit(1)
+                            
+                            Text(folder.path)
+                                .font(.footnote)
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                        }
+                        .padding()
+                        .cornerRadius(8)
+                    }
+                }
+                .padding()
+            }
+            
             Spacer() // Empty space below
         }
-        .onAppear(perform: loadFileMetadata)
+        .onAppear(perform: {
+            loadFileMetadata()
+            scanAvailableFolders()
+        })
     }
     
     // ✅ Loads file metadata (creation date, modification date, origin)
@@ -121,16 +167,120 @@ struct FileInfoAndMovingView: View {
         return formatter.string(from: date)
     }
     
+    // ✅ Recursively scans Downloads, Desktop, and Documents for all folders
+    private func scanAvailableFolders() {
+        let searchDirectories: [FolderType] = [.downloads, .desktop, .documents]
+        var discoveredFolders: [URL] = []
+
+        let group = DispatchGroup()
+
+        for folder in searchDirectories {
+            group.enter()
+            getSecureFolderAccess(for: folder) { folderURL in
+                if let folderURL = folderURL {
+                    if let folderList = retrieveFolders(at: folderURL) {
+                        discoveredFolders.append(contentsOf: folderList)
+                    }
+                }
+                group.leave()
+            }
+        }
+
+        group.notify(queue: .main) {
+            self.availableFolders = discoveredFolders // ✅ Update folders after all requests complete
+        }
+    }
+    
+    private func getSecureFolderAccess(for folder: FolderType, completion: @escaping (URL?) -> Void) {
+        let folderKey = folder.userDefaultsKey
+
+        // ✅ Check if a stored security-scoped bookmark exists
+        if let bookmarkData = UserDefaults.standard.data(forKey: folderKey) {
+            do {
+                var isStale = false
+                let folderURL = try URL(resolvingBookmarkData: bookmarkData,
+                                        options: .withSecurityScope,
+                                        relativeTo: nil,
+                                        bookmarkDataIsStale: &isStale)
+
+                if isStale {
+                    print("Bookmark data is stale. Requesting permission again.")
+                    requestFolderAccess(for: folder, completion: completion)
+                    return
+                }
+
+                if folderURL.startAccessingSecurityScopedResource() {
+                    completion(folderURL) // ✅ Successfully accessed stored folder
+                    return
+                } else {
+                    print("Failed to access security-scoped resource.")
+                }
+            } catch {
+                print("Error resolving bookmark for \(folder.rawValue): \(error)")
+            }
+        }
+
+        // ✅ If no bookmark exists, request folder access
+        requestFolderAccess(for: folder, completion: completion)
+    }
+
+    
+    private func requestFolderAccess(for folder: FolderType, completion: @escaping (URL?) -> Void) {
+        DispatchQueue.main.async {
+            let openPanel = NSOpenPanel()
+            openPanel.message = "Please grant access to your \(folder.rawValue) folder"
+            openPanel.prompt = "Allow"
+            openPanel.canChooseFiles = false
+            openPanel.canChooseDirectories = true
+            openPanel.allowsMultipleSelection = false
+            openPanel.directoryURL = folder.directoryURL
+
+            if openPanel.runModal() == .OK, let selectedURL = openPanel.url {
+                do {
+                    let bookmarkData = try selectedURL.bookmarkData(options: .withSecurityScope,
+                                                                    includingResourceValuesForKeys: nil,
+                                                                    relativeTo: nil)
+
+                    UserDefaults.standard.set(bookmarkData, forKey: folder.userDefaultsKey)
+                    completion(selectedURL) // ✅ Return the selected folder asynchronously
+                    return
+                } catch {
+                    print("Error creating security-scoped bookmark: \(error)")
+                }
+            }
+
+            completion(nil) // ✅ If access fails, return nil
+        }
+    }
+
+    
+    // ✅ Retrieves all folders within a given directory
+    private func retrieveFolders(at rootURL: URL) -> [URL]? {
+        do {
+            let folderContents = try FileManager.default.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
+
+            let folders = folderContents.filter { url in
+                var isDirectory: ObjCBool = false
+                return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+            }
+
+            return folders
+        } catch {
+            print("Error accessing \(rootURL.path): \(error)")
+            return nil
+        }
+    }
+
     // ✅ Open the file
     private func openFile() {
         NSWorkspace.shared.open(fileURL)
     }
-
+    
     // ✅ Show suggested locations (Placeholder)
     private func viewSuggestedLocations() {
         print("Viewing suggested locations for \(fileName)")
     }
-
+    
     // ✅ Delete the file (Confirmation Needed)
     private func deleteFile() {
         do {
@@ -145,3 +295,4 @@ struct FileInfoAndMovingView: View {
 #Preview {
     FileInfoAndMovingView(fileURL: URL(fileURLWithPath: "/Users/yourusername/Downloads/example.pdf"))
 }
+

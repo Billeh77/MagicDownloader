@@ -9,7 +9,9 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var files: [URL] = []
+    @State private var selectedFile: URL? // ✅ Stores the most recent file
     @State private var selectedFolder: FolderType = .downloads
+    private let fileMonitor = FileMonitor() // ✅ File monitor to detect new files
 
     enum FolderType: String, CaseIterable, Identifiable {
         case downloads = "Downloads"
@@ -47,12 +49,15 @@ struct ContentView: View {
                 .padding()
                 .onChange(of: selectedFolder) {
                     DispatchQueue.main.async {
-                        checkAndRequestFolderAccess() // ✅ Trigger permission check and refresh on selection change
+                        checkAndRequestFolderAccess()
+                        startMonitoringFolder()
                     }
                 }
 
                 List(files, id: \.self) { file in
-                    NavigationLink(destination: ItemInfoAndMovingView(fileURL: file)) {
+                    NavigationLink(destination: ItemInfoAndMovingView(fileURL: file),
+                                   tag: file,
+                                   selection: $selectedFile) { // ✅ Auto-select recent file
                         Text(file.lastPathComponent)
                     }
                 }
@@ -67,9 +72,10 @@ struct ContentView: View {
             .onAppear {
                 DispatchQueue.main.async {
                     checkAndRequestFolderAccess()
+                    startMonitoringFolder()
                 }
             }
-            
+
             Text("Select a file")
         }
     }
@@ -78,7 +84,6 @@ struct ContentView: View {
     private func checkAndRequestFolderAccess() {
         let folderKey = selectedFolder.userDefaultsKey
 
-        // ✅ Retrieve stored bookmark
         if let bookmarkData = UserDefaults.standard.data(forKey: folderKey) {
             do {
                 var isStale = false
@@ -88,27 +93,24 @@ struct ContentView: View {
                                           bookmarkDataIsStale: &isStale)
 
                 if isStale {
-                    print("Bookmark data is stale. Requesting permission again.")
                     requestFolderAccess(for: selectedFolder)
                     return
                 }
 
-                // ✅ Start security-scoped access
                 if restoredURL.startAccessingSecurityScopedResource() {
                     refreshFiles()
                 } else {
                     print("Failed to access security-scoped resource.")
                 }
             } catch {
-                print("Error resolving security-scoped bookmark: \(error)")
-                requestFolderAccess(for: selectedFolder) // Fallback to manual selection
+                requestFolderAccess(for: selectedFolder)
             }
         } else {
-            requestFolderAccess(for: selectedFolder) // First-time request
+            requestFolderAccess(for: selectedFolder)
         }
     }
 
-    /// ✅ Requests access to the selected folder (Downloads, Documents, or Desktop)
+    /// ✅ Requests access to the selected folder
     private func requestFolderAccess(for folder: FolderType) {
         DispatchQueue.main.async {
             let openPanel = NSOpenPanel()
@@ -121,15 +123,10 @@ struct ContentView: View {
 
             if openPanel.runModal() == .OK, let selectedURL = openPanel.url {
                 do {
-                    // ✅ Create a security-scoped bookmark
                     let bookmarkData = try selectedURL.bookmarkData(options: .withSecurityScope,
                                                                     includingResourceValuesForKeys: nil,
                                                                     relativeTo: nil)
-
-                    // ✅ Store the bookmark in UserDefaults
                     UserDefaults.standard.set(bookmarkData, forKey: folder.userDefaultsKey)
-                    
-                    // ✅ Refresh the file list immediately after permission is granted
                     refreshFiles()
                 } catch {
                     print("Error creating security-scoped bookmark: \(error)")
@@ -138,13 +135,9 @@ struct ContentView: View {
         }
     }
 
-
-    
-    /// ✅ Refreshes the file list based on the selected folder
-    /// ✅ Sorts files by creation date (most recent first)
+    /// ✅ Refreshes the file list and auto-selects the most recent file
     private func refreshFiles() {
         guard let bookmarkData = UserDefaults.standard.data(forKey: selectedFolder.userDefaultsKey) else {
-            print("No stored bookmark for \(selectedFolder.rawValue), requesting access...")
             requestFolderAccess(for: selectedFolder)
             return
         }
@@ -156,10 +149,7 @@ struct ContentView: View {
                                     relativeTo: nil,
                                     bookmarkDataIsStale: &isStale)
 
-            print("Resolved folder URL: \(folderURL.path)")
-
             if isStale {
-                print("Bookmark data is stale. Requesting permission again.")
                 requestFolderAccess(for: selectedFolder)
                 return
             }
@@ -169,16 +159,14 @@ struct ContentView: View {
 
                 let fileURLs = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: [.creationDateKey], options: [])
 
-                print("Files found: \(fileURLs.count)")
-                for file in fileURLs {
-                    print(" - \(file.lastPathComponent)")
-                }
-
                 self.files = fileURLs.sorted {
                     let date1 = (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date.distantPast
                     let date2 = (try? $1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date.distantPast
                     return date1 > date2
                 }
+
+                selectedFile = files.first // ✅ Auto-select the most recent file
+
             } else {
                 print("Failed to access security-scoped resource.")
             }
@@ -187,9 +175,17 @@ struct ContentView: View {
         }
     }
 
+    /// ✅ Starts monitoring the folder for new files
+    private func startMonitoringFolder() {
+        fileMonitor.startMonitoring(folder: selectedFolder) { newFile in
+            DispatchQueue.main.async {
+                refreshFiles()
+                selectedFile = newFile // ✅ Auto-select newest file when detected
+            }
+        }
+    }
 }
 
 #Preview {
     ContentView()
 }
-

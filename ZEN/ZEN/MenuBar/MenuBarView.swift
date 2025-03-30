@@ -57,12 +57,11 @@ struct MenuBarView: View {
     }
 
     private func openInZen(_ file: URL) {
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.arguments = [file.path]
-        if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.yourcompany.ZEN") {
-            NSWorkspace.shared.openApplication(at: appURL, configuration: configuration, completionHandler: nil)
+        if let appDelegate = NSApp.delegate as? AppDelegate {
+            appDelegate.openZENMainWindow(with: file)
         } else {
-            print("❌ Could not find ZEN app")
+            print("❌ Could not get AppDelegate")
         }
     }
+
 }

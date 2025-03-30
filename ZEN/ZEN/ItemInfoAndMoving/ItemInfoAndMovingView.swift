@@ -76,7 +76,7 @@ struct ItemInfoAndMovingView: View {
         }
         .onAppear(perform: {
             loadFileMetadata()
-            scanAvailableFolders()
+            scanDesktopFoldersOnly()
         })
         .alert("Move File?", isPresented: $showMoveAlert) {
             Button("Cancel", role: .cancel) { }

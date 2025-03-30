@@ -11,7 +11,12 @@ class MenuBarManager: ObservableObject {
         self.popover = NSPopover()
         self.popover.behavior = .transient
         self.popover.contentViewController = NSHostingController(rootView: MenuBarView().environmentObject(self))
-
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleNewDownload(_:)),
+            name: .newDownloadDetected,
+            object: nil
+        )
         setupMenuBar()
     }
 
@@ -26,14 +31,22 @@ class MenuBarManager: ObservableObject {
     func showMenu(for file: URL) {
         DispatchQueue.main.async {
             self.latestFile = file
+
+            if self.popover.contentViewController == nil {
+                print("📦 Setting up popover contentViewController for the first time")
+                self.popover.contentViewController = NSHostingController(rootView: MenuBarView().environmentObject(self))
+            }
+
             if let button = self.statusItem.button {
+                print("🎯 Showing popover for \(file.lastPathComponent)")
                 self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                NSApp.activate(ignoringOtherApps: true) // ✅ Bring app forward
+                NSApp.activate(ignoringOtherApps: true)
             } else {
                 print("❌ Error: statusItem button not found")
             }
         }
     }
+
 
     func hideMenu() {
         popover.performClose(nil)
@@ -46,4 +59,13 @@ class MenuBarManager: ObservableObject {
             showMenu(for: latestFile ?? URL(fileURLWithPath: ""))
         }
     }
+    @objc private func handleNewDownload(_ notification: Notification) {
+        guard let fileURL = notification.object as? URL else {
+            print("⚠️ Received download notification without valid URL")
+            return
+        }
+        print("📨 Notification received in MenuBarManager for \(fileURL.lastPathComponent)")
+        showMenu(for: fileURL)
+    }
+
 }

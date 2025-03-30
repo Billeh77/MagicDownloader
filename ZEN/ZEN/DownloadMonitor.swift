@@ -7,12 +7,12 @@ class DownloadMonitor: ObservableObject {
     private var timer: Timer?
     
     @Published var latestFile: URL?
-
+    
     init() {
         monitoredFolder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
         startMonitoring()
     }
-
+    
     /// ✅ Uses FSEvents for **instantaneous** detection
     private func startMonitoring() {
         let path = monitoredFolder.path as NSString
@@ -23,14 +23,14 @@ class DownloadMonitor: ObservableObject {
             release: nil,
             copyDescription: nil
         )
-
+        
         eventStream = FSEventStreamCreate(nil, { (stream, clientCallBackInfo, numEvents, eventPaths, eventFlags, eventIds) in
             guard let clientCallBackInfo = clientCallBackInfo else { return } // ✅ Fix nil crash
             
             let monitor = Unmanaged<DownloadMonitor>.fromOpaque(clientCallBackInfo).takeUnretainedValue()
             monitor.checkForNewFiles()
         }, &context, [path] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0, UInt32(kFSEventStreamCreateFlagFileEvents))
-
+        
         if let stream = eventStream {
             FSEventStreamScheduleWithRunLoop(stream, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
             FSEventStreamStart(stream)
@@ -40,51 +40,44 @@ class DownloadMonitor: ObservableObject {
             startPolling()
         }
     }
-
+    
     /// 🔄 **Backup:** Poll every 0.5 seconds (brute force)
     private func startPolling() {
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
             self.checkForNewFiles()
         }
     }
-
+    
+    private var lastDetectedFile: URL?
+    
     private func checkForNewFiles() {
         do {
-            let fileURLs = try FileManager.default.contentsOfDirectory(at: monitoredFolder, includingPropertiesForKeys: [.creationDateKey], options: [])
-
-            if let newestFile = fileURLs.sorted(by: {
-                let date1 = (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date.distantPast
-                let date2 = (try? $1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date.distantPast
-                return date1 > date2
-            }).first {
-                let fileName = newestFile.lastPathComponent
-
-                // ✅ Ignore Chrome temporary files
-                if fileName.hasPrefix(".com.google.Chrome") || fileName.hasSuffix(".crdownload") {
-                    print("⏳ Ignoring temporary Chrome download: \(fileName)")
-                    return
-                }
-
-                DispatchQueue.main.async {
-                    self.latestFile = newestFile
-                    print("✅ New download detected: \(fileName)")
-
-                    // ✅ Show menu bar pop-up immediately
-                    NotificationCenter.default.post(name: .newDownloadDetected, object: newestFile)
-                }
+            let contents = try FileManager.default.contentsOfDirectory(at: monitoredFolder, includingPropertiesForKeys: [.creationDateKey], options: [])
+            
+            guard let newest = contents.sorted(by: {
+                let d1 = (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                let d2 = (try? $1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                return d1 > d2
+            }).first else { return }
+            
+            guard newest != lastDetectedFile else { return } // ✅ Skip if same as before
+            
+            lastDetectedFile = newest
+            let fileName = newest.lastPathComponent
+            
+            if fileName.hasPrefix(".com.google.Chrome") || fileName.hasSuffix(".crdownload") {
+                print("⏳ Ignoring temporary Chrome download: \(fileName)")
+                return
+            }
+            
+            DispatchQueue.main.async {
+                self.latestFile = newest
+                NotificationCenter.default.post(name: .newDownloadDetected, object: newest)
+                print("✅ New file detected: \(fileName)")
             }
         } catch {
-            print("❌ Error checking downloads folder: \(error)")
+            print("❌ Error scanning downloads: \(error)")
         }
-    }
-
-    deinit {
-        if let stream = eventStream {
-            FSEventStreamStop(stream)
-            FSEventStreamInvalidate(stream)
-            FSEventStreamRelease(stream)
-        }
-        timer?.invalidate()
     }
 }
 

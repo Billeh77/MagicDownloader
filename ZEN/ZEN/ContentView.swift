@@ -8,11 +8,17 @@
 import SwiftUI
 
 struct ContentView: View {
+   
     @State private var files: [URL] = []
     @State private var selectedFile: URL? // ✅ Stores the most recent file
     @State private var selectedFolder: FolderType = .downloads
     private let fileMonitor = FileMonitor() // ✅ File monitor to detect new files
-
+    init(selectedInitialFile: URL? = nil) {
+        _selectedFile = State(initialValue: selectedInitialFile)
+    }
+    func handleIncomingFile(_ file: URL) {
+        selectedFile = file
+    }
     enum FolderType: String, CaseIterable, Identifiable {
         case downloads = "Downloads"
         case documents = "Documents"
@@ -70,11 +76,12 @@ struct ContentView: View {
                 }
             }
             .onAppear {
-                DispatchQueue.main.async {
-                    checkAndRequestFolderAccess()
-                    startMonitoringFolder()
+                    print("🧭 ContentView appeared. Folder selected: \(selectedFolder.rawValue)")
+                    DispatchQueue.main.async {
+                        checkAndRequestFolderAccess()
+                        startMonitoringFolder()
+                    }
                 }
-            }
 
             Text("Select a file")
         }
@@ -137,6 +144,9 @@ struct ContentView: View {
 
     /// ✅ Refreshes the file list and auto-selects the most recent file
     private func refreshFiles() {
+        print("🔄 Refreshing files for folder: \(selectedFolder.rawValue)")
+        print("🗂️ Found \(self.files.count) files. First: \(self.files.first?.lastPathComponent ?? "None")")
+
         guard let bookmarkData = UserDefaults.standard.data(forKey: selectedFolder.userDefaultsKey) else {
             requestFolderAccess(for: selectedFolder)
             return

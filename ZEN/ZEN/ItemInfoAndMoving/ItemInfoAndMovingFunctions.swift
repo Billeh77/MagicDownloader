@@ -163,6 +163,45 @@ extension ItemInfoAndMovingView {
         }
     }
     
+    func scanDesktopFoldersOnly() {
+        guard let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first else {
+            print("❌ Could not access Desktop directory.")
+            return
+        }
+
+        getSecureFolderAccess(for: desktopURL) { folderURL in
+            guard let folderURL = folderURL else {
+                print("❌ Access to Desktop folder denied.")
+                return
+            }
+
+            do {
+                let contents = try FileManager.default.contentsOfDirectory(
+                    at: folderURL,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                )
+
+                let topLevelFolders = contents.filter { url in
+                    var isDir: ObjCBool = false
+                    return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+                        && isDir.boolValue
+                        && url.deletingLastPathComponent() == folderURL // ✅ Ensure it's directly on Desktop
+                }
+
+                DispatchQueue.main.async {
+                    self.availableFolders = topLevelFolders
+                    print("✅ Loaded \(topLevelFolders.count) top-level Desktop folders")
+                }
+
+            } catch {
+                print("❌ Error reading Desktop folder contents: \(error)")
+            }
+        }
+    }
+
+
+    
     
     func getSecureFolderAccess(for folder: URL, completion: @escaping (URL?) -> Void) {
         let folderKey = "savedFolderBookmark_\(folder.lastPathComponent)"
